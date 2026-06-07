@@ -42,6 +42,7 @@ namespace MSStoreDownloader
         private CheckBox    _chkSkipLicense;
         private CheckBox    _chkIndividualFolders;
         private CheckBox    _chkDebugLog;
+        private CheckBox    _chkAutoDownload;
 
         private ToolStrip         _gridToolStrip;
         private ToolStripButton   _tsBtnDownloadSelected;
@@ -254,11 +255,20 @@ namespace MSStoreDownloader
             _chkClipboardMonitor.Checked   = true;
             _inputPanel.Controls.Add(_chkClipboardMonitor);
 
+            _chkAutoDownload = new CheckBox();
+            _chkAutoDownload.Text      = "Auto-download";
+            _chkAutoDownload.ForeColor = Color.FromArgb(180, 180, 180);
+            _chkAutoDownload.AutoSize  = true;
+            _chkAutoDownload.Location  = new Point(340, 72);
+            _chkAutoDownload.Checked   = false;
+            _chkAutoDownload.Enabled   = false;   // only active when Clipboard monitor is on
+            _inputPanel.Controls.Add(_chkAutoDownload);
+
             _chkCreateInstaller = new CheckBox();
             _chkCreateInstaller.Text      = "Create installer script";
             _chkCreateInstaller.ForeColor = Color.FromArgb(180, 180, 180);
             _chkCreateInstaller.AutoSize  = true;
-            _chkCreateInstaller.Location  = new Point(340, 72);
+            _chkCreateInstaller.Location  = new Point(500, 72);
             _chkCreateInstaller.Checked   = false;
             _inputPanel.Controls.Add(_chkCreateInstaller);
 
@@ -266,7 +276,7 @@ namespace MSStoreDownloader
             _chkSkipLicense.Text      = "Allow unsigned";
             _chkSkipLicense.ForeColor = Color.FromArgb(180, 180, 180);
             _chkSkipLicense.AutoSize  = true;
-            _chkSkipLicense.Location  = new Point(490, 72);
+            _chkSkipLicense.Location  = new Point(650, 72);
             _chkSkipLicense.Checked   = false;
             _inputPanel.Controls.Add(_chkSkipLicense);
 
@@ -274,7 +284,7 @@ namespace MSStoreDownloader
             _chkIndividualFolders.Text      = "Individual app folders";
             _chkIndividualFolders.ForeColor = Color.FromArgb(180, 180, 180);
             _chkIndividualFolders.AutoSize  = true;
-            _chkIndividualFolders.Location  = new Point(615, 72);
+            _chkIndividualFolders.Location  = new Point(785, 72);
             _chkIndividualFolders.Checked   = false;
             _inputPanel.Controls.Add(_chkIndividualFolders);
 
@@ -282,7 +292,7 @@ namespace MSStoreDownloader
             _chkDebugLog.Text      = "Debug log";
             _chkDebugLog.ForeColor = Color.FromArgb(150, 150, 180);
             _chkDebugLog.AutoSize  = true;
-            _chkDebugLog.Location  = new Point(775, 72);
+            _chkDebugLog.Location  = new Point(940, 72);
             _chkDebugLog.Checked   = false;
             _inputPanel.Controls.Add(_chkDebugLog);
         }
@@ -344,7 +354,6 @@ namespace MSStoreDownloader
             _tsRingSelector.SelectedIndex = 1;   // Release Preview by default
             _gridToolStrip.Items.Add(tsLblRing);
             _gridToolStrip.Items.Add(_tsRingSelector);
-            parent.Controls.Add(_gridToolStrip);
 
             _grid = new DataGridView();
             _grid.Dock                       = DockStyle.Fill;
@@ -393,10 +402,15 @@ namespace MSStoreDownloader
             _headerStrip.Height    = 26;
             _headerStrip.BackColor = Color.FromArgb(45, 65, 110);
             _headerStrip.Paint    += HeaderStrip_Paint;
-            parent.Controls.Add(_headerStrip);
+            // Docking z-order is critical: the Fill control must be added FIRST
+            // (lowest z-order) so that Top-docked siblings added afterwards each
+            // reserve their space above it. Order of reservation = reverse add order:
+            //   grid (Fill) added first  -> fills whatever remains
+            //   headerStrip (Top) next   -> reserves 26px directly above grid
+            //   gridToolStrip (Top) last -> reserves its height above the strip
             parent.Controls.Add(_grid);
-            _grid.BringToFront();
-            _headerStrip.BringToFront();
+            parent.Controls.Add(_headerStrip);
+            parent.Controls.Add(_gridToolStrip);
 
             // Repaint the strip when columns resize or the grid scrolls horizontally
             _grid.ColumnWidthChanged += delegate(object s, DataGridViewColumnEventArgs ev)
@@ -587,6 +601,14 @@ namespace MSStoreDownloader
                 if (_logger != null) _logger.DebugEnabled = _chkDebugLog.Checked;
             };
 
+            _chkIncludeDeps.CheckedChanged += delegate(object s, EventArgs e)
+            {
+                bool hasUrl = _txtUrl.ForeColor != PlaceholderColor && !string.IsNullOrWhiteSpace(_txtUrl.Text);
+                bool hasId  = _txtProductId.ForeColor != PlaceholderColor && !string.IsNullOrWhiteSpace(_txtProductId.Text);
+                if ((hasUrl || hasId) && _rows.Count > 0)
+                    BtnSearch_Click(this, EventArgs.Empty);
+            };
+
             _chkClipboardMonitor.CheckedChanged += delegate(object s, EventArgs e)
             {
                 if (_clipboardTimer != null)
@@ -594,6 +616,10 @@ namespace MSStoreDownloader
                     if (_chkClipboardMonitor.Checked) _clipboardTimer.Start();
                     else _clipboardTimer.Stop();
                 }
+                // AutoDownload only usable when clipboard monitor is active
+                _chkAutoDownload.Enabled = _chkClipboardMonitor.Checked;
+                if (!_chkClipboardMonitor.Checked)
+                    _chkAutoDownload.Checked = false;
             };
         }
 
@@ -793,10 +819,28 @@ namespace MSStoreDownloader
                     BeginInvoke(new Action(delegate
                     {
                         SetStatus("Ready. Manifests loaded - dependency selection is now precise.");
-                        if (_updatingCheckboxes) return;
-                        _updatingCheckboxes = true;
-                        try { SyncDependencyCheckboxes(); }
-                        finally { _updatingCheckboxes = false; }
+                        if (!_updatingCheckboxes)
+                        {
+                            _updatingCheckboxes = true;
+                            try { SyncDependencyCheckboxes(); }
+                            finally { _updatingCheckboxes = false; }
+                        }
+                        // Trigger auto-download if requested via clipboard.
+                        // Runs after dependency sync so all the right rows are checked.
+                        if (_pendingAutoDownload)
+                        {
+                            _pendingAutoDownload = false;
+                            List<PackageGridRow> toDownload = GetCheckedRows();
+                            if (toDownload.Count > 0)
+                            {
+                                _logger.Info("Auto-download triggered: " + toDownload.Count + " package(s).");
+                                DownloadRows(toDownload);
+                            }
+                            else
+                            {
+                                _logger.Warning("Auto-download: no packages were checked, nothing to download.");
+                            }
+                        }
                     }));
                 }
             });
@@ -866,6 +910,7 @@ namespace MSStoreDownloader
             foreach (PackageGridRow row in _rows)
             {
                 if (row.Package.IsDependency) continue;
+                if (row.Package.IsBlocked) continue;   // never auto-select encrypted
                 string key = ExtractPackageName(row.Package.FileName);
 
                 string topVer;
@@ -1220,6 +1265,7 @@ namespace MSStoreDownloader
         }
 
         private bool _updatingCheckboxes;
+        private bool _pendingAutoDownload;
 
         /// <summary>
         /// Select dependency rows that are genuinely required by the checked
@@ -1917,12 +1963,23 @@ namespace MSStoreDownloader
                 _chkSkipLicense.Checked,
                 _chkIndividualFolders.Checked,
                 _chkDebugLog.Checked);
+            // Save AutoDownload separately
+            try
+            {
+                Microsoft.Win32.RegistryKey k =
+                    Microsoft.Win32.Registry.CurrentUser.CreateSubKey(RegAppKey);
+                if (k != null) { k.SetValue("AutoDownload", _chkAutoDownload.Checked ? 1 : 0); k.Close(); }
+            }
+            catch { }
         }
 
         private void LoadAllCheckboxStates()
         {
             _chkIncludeDeps.Checked      = LoadCheckboxState("IncludeDeps",      true);
             _chkClipboardMonitor.Checked = LoadCheckboxState("ClipboardMonitor", true);
+            _chkAutoDownload.Enabled     = _chkClipboardMonitor.Checked;
+            _chkAutoDownload.Checked     = _chkClipboardMonitor.Checked &&
+                                           LoadCheckboxState("AutoDownload", false);
             _chkCreateInstaller.Checked  = LoadCheckboxState("CreateInstaller",  false);
             _chkSkipLicense.Checked      = LoadCheckboxState("AllowUnsigned",    false);
             _chkIndividualFolders.Checked = LoadCheckboxState("IndivFolders",    false);
@@ -1979,6 +2036,14 @@ namespace MSStoreDownloader
                 _txtProductId.ForeColor = PlaceholderColor;
                 _txtProductId.Text      = "9NBLGGH4NNS1";
                 _logger.Info("Clipboard: Store URL detected, running search...");
+
+                // If auto-download is enabled, flag it so the download starts
+                // automatically once the search + manifest phase completes.
+                if (_chkAutoDownload.Enabled && _chkAutoDownload.Checked)
+                {
+                    _pendingAutoDownload = true;
+                    _logger.Info("Auto-download is ON: will download once packages are resolved.");
+                }
 
                 // Trigger search as if the user clicked the button
                 BtnSearch_Click(this, EventArgs.Empty);

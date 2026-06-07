@@ -392,6 +392,12 @@ namespace MSStoreDownloader
             // version and architecture as their plain counterparts — they are only
             // needed on devices without the matching decryption license key.
             // Prefer plain variants for general use.
+            // Collect identity names (name + arch, IGNORING version) that have at
+            // least one NON-encrypted variant. Encrypted (.eappx/.eappxbundle)
+            // packages often carry a different build suffix (e.g. ".70") than their
+            // plain counterparts, so matching on exact version misses them.
+            // We therefore block an encrypted package whenever ANY plain variant of
+            // the same identity name + architecture exists, regardless of version.
             HashSet<string> plainKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (PackageInfo p in packages)
             {
@@ -399,9 +405,7 @@ namespace MSStoreDownloader
                 bool isEncrypted = ext == ".eappx" || ext == ".eappxbundle";
                 if (!isEncrypted)
                 {
-                    // Key = identity name + arch + version (without extension)
-                    string key = ExtractPkgName(p.FileName) + "|" +
-                                 p.Architecture + "|" + p.Version;
+                    string key = ExtractPkgName(p.FileName) + "|" + p.Architecture;
                     plainKeys.Add(key);
                 }
             }
@@ -411,10 +415,12 @@ namespace MSStoreDownloader
                 bool isEncrypted = ext == ".eappx" || ext == ".eappxbundle";
                 if (isEncrypted)
                 {
-                    string key = ExtractPkgName(p.FileName) + "|" +
-                                 p.Architecture + "|" + p.Version;
+                    string key = ExtractPkgName(p.FileName) + "|" + p.Architecture;
                     if (plainKeys.Contains(key))
+                    {
                         p.IsBlocked = true;   // plain equivalent exists — deprioritise
+                        _logger.Debug("  Encrypted package blocked (plain exists): " + p.FileName);
+                    }
                 }
             }
 
