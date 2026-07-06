@@ -128,6 +128,13 @@ namespace MSStoreDownloader
             List<ManifestDependency> allDeps = new List<ManifestDependency>();
             HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+            // Read deps from ONE application sub-package only. Bundles can contain
+            // multiple application sub-packages (e.g. Photos ships a modern WinUI app
+            // AND a legacy app in the same bundle). Unioning their deps would select
+            // every historical runtime. We take the deps of the sub-package with the
+            // FEWEST declared dependencies that has at least one — heuristically the
+            // most modern component (old UWP apps declare many NET.Native variants).
+            List<ManifestDependency> bestSubDeps = null;
             foreach (BundlePackageEntry sub in subPackages)
             {
                 if (ct.IsCancellationRequested) break;
@@ -135,8 +142,16 @@ namespace MSStoreDownloader
 
                 List<ManifestDependency> subDeps =
                     ReadSubPackageDeps(url, sub.FileName, logger, ct);
+                logger.Debug("    -> " + subDeps.Count + " dep(s) declared");
 
-                foreach (ManifestDependency d in subDeps)
+                if (subDeps.Count > 0 &&
+                    (bestSubDeps == null || subDeps.Count < bestSubDeps.Count))
+                    bestSubDeps = subDeps;
+            }
+
+            if (bestSubDeps != null)
+            {
+                foreach (ManifestDependency d in bestSubDeps)
                 {
                     string key = d.Name + "|" + d.MinVersion;
                     if (!seen.Contains(key))
@@ -145,9 +160,6 @@ namespace MSStoreDownloader
                         allDeps.Add(d);
                     }
                 }
-
-                // One sub-package is enough if it has real deps
-                if (allDeps.Count > 0) break;
             }
 
             if (allDeps.Count > 0)

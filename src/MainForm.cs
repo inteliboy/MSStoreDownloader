@@ -1340,6 +1340,10 @@ namespace MSStoreDownloader
                 foreach (PackageGridRow main in checkedMains)
                 {
                     if (main.Package.ManifestDeps == null) continue;
+                    _logger.Debug("Checked main: " + main.FileName +
+                                  " declares " + main.Package.ManifestDeps.Count + " dep(s):");
+                    foreach (ManifestDependency dd in main.Package.ManifestDeps)
+                        _logger.Debug("    requires " + dd.Name + " >= " + dd.MinVersion);
                     string mainArch = main.Package.Architecture;
                     // A "neutral" main package is a bundle covering ALL arches.
                     // Select dep variants for all arches, not just one.
@@ -1537,6 +1541,9 @@ namespace MSStoreDownloader
                 _logger.Info("Dependency selection (" + mode + "): " +
                              selCount + " required and checked, " +
                              skipCount + " not declared as required (hover Kind column for details).");
+                // With debug on, list exactly which dep files were selected
+                foreach (string sf in selectedFiles)
+                    _logger.Debug("    selected: " + sf);
             }
         }
 
@@ -1589,7 +1596,28 @@ namespace MSStoreDownloader
                 if (sb.Length > 0) sb.Append('.');
                 sb.Append(part);
             }
-            return sb.ToString() + "|" + dep.Architecture.ToLowerInvariant();
+
+            // Collapse embedded version segments in the identity name so that
+            // e.g. Microsoft.NET.Native.Framework.1.3 and ...Framework.2.2 fall
+            // into the SAME family key and only the newest one gets selected.
+            //   Microsoft.NET.Native.Framework.1.3  -> Microsoft.NET.Native.Framework
+            //   Microsoft.UI.Xaml.2.7               -> Microsoft.UI.Xaml
+            //   Microsoft.VCLibs.140.00.UWPDesktop  -> Microsoft.VCLibs.UWPDesktop
+            //   Microsoft.WindowsAppRuntime.2       -> Microsoft.WindowsAppRuntime
+            string identity = sb.ToString();
+            string[] dotParts = identity.Split('.');
+            System.Text.StringBuilder family = new System.Text.StringBuilder();
+            foreach (string dp in dotParts)
+            {
+                bool numeric = dp.Length > 0;
+                foreach (char c in dp)
+                    if (!char.IsDigit(c)) { numeric = false; break; }
+                if (numeric) continue;               // drop version-number segments
+                if (family.Length > 0) family.Append('.');
+                family.Append(dp);
+            }
+
+            return family.ToString() + "|" + dep.Architecture.ToLowerInvariant();
         }
 
         private static bool IsHex(string s)

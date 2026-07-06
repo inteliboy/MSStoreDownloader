@@ -4,10 +4,8 @@
 
 Built with **WinForms / .NET Framework 4.8** — runs on any Windows 10/11 machine without installing anything extra.
 
-
-<img width="1136" height="743" alt="Screen2" src="https://github.com/user-attachments/assets/1ec993ea-c49e-4123-9c82-2629de585b84" />
-
 ---
+
 ## Features
 
 ### 📦 Package Retrieval
