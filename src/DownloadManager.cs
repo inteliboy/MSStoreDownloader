@@ -141,6 +141,21 @@ namespace MSStoreDownloader
 
         // ── Core download ──────────────────────────────────────────────────────
 
+        internal void DownloadForArchive(PackageInfo package, string destinationPath)
+        {
+            DownloadCompletedEventArgs result = null;
+            EventHandler<DownloadCompletedEventArgs> capture = (sender, args) => result = args;
+            DownloadCompleted += capture;
+            try
+            {
+                DownloadFile(Guid.NewGuid(), package, destinationPath, CancellationToken.None);
+                if (result == null || !result.Succeeded)
+                    throw new IOException("Could not download " + package.FileName + ": " +
+                        (result == null ? "no completion result" : result.ErrorMessage));
+            }
+            finally { DownloadCompleted -= capture; }
+        }
+
         private void DownloadFile(Guid taskId, PackageInfo package,
                                    string destinationPath, CancellationToken ct)
         {

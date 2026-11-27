@@ -56,7 +56,7 @@ REM ── Compile ────────────────────�
 echo  Compiling...
 echo.
 
-"%CSC%" /target:winexe /platform:anycpu /optimize+ /out:"%OUTEXE%" /warn:4 /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Net.dll /r:System.Web.dll /r:System.Data.dll /r:Microsoft.CSharp.dll "%SRCDIR%\Program.cs" "%SRCDIR%\Logger.cs" "%SRCDIR%\PackageInfo.cs" "%SRCDIR%\PackageGridRow.cs" "%SRCDIR%\StoreClient.cs" "%SRCDIR%\ManifestReader.cs" "%SRCDIR%\DownloadManager.cs" "%SRCDIR%\MainForm.cs"
+"%CSC%" /target:winexe /platform:anycpu /optimize+ /out:"%OUTEXE%" /warn:4 /r:System.dll /r:System.Core.dll /r:System.IO.Compression.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Net.dll /r:System.Web.dll /r:System.Web.Extensions.dll /r:System.Xml.Linq.dll /r:System.Data.dll /r:Microsoft.CSharp.dll "%SRCDIR%\Program.cs" "%SRCDIR%\Logger.cs" "%SRCDIR%\PackageInfo.cs" "%SRCDIR%\PackageGridRow.cs" "%SRCDIR%\StoreClient.cs" "%SRCDIR%\ManifestReader.cs" "%SRCDIR%\DownloadManager.cs" "%SRCDIR%\PackageWim.cs" "%SRCDIR%\WimPackageManifest.cs" "%SRCDIR%\AutomaticWimUpdate.cs" "%SRCDIR%\StoreWimFeed.cs" "%SRCDIR%\MainForm.cs"
 
 if %ERRORLEVEL% neq 0 (
     echo.

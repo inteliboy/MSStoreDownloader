@@ -10,6 +10,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace MSStoreDownloader
@@ -51,6 +52,7 @@ namespace MSStoreDownloader
         private ToolStripButton   _tsBtnCopyUrl;
         private ToolStripButton   _tsBtnSelectAll;
         private ToolStripButton   _tsBtnClearResults;
+        private ToolStripButton   _tsBtnUpdateWim;
         private ToolStripLabel    _tsLblFilter;
         private ToolStripComboBox _tsFilterArch;
         private ToolStripComboBox _tsRingSelector;
@@ -354,6 +356,9 @@ namespace MSStoreDownloader
             _tsRingSelector.SelectedIndex = 1;   // Release Preview by default
             _gridToolStrip.Items.Add(tsLblRing);
             _gridToolStrip.Items.Add(_tsRingSelector);
+            _tsBtnUpdateWim = CreateTsButton("Update Packages WIM", "Refresh the apps and dependencies in an existing packages.wim");
+            _tsBtnUpdateWim.Click += async (sender, args) => await UpdatePackagesWimAsync();
+            _gridToolStrip.Items.Add(_tsBtnUpdateWim);
 
             _grid = new DataGridView();
             _grid.Dock                       = DockStyle.Fill;
@@ -2016,8 +2021,59 @@ namespace MSStoreDownloader
             if (_logger != null) _logger.DebugEnabled = _chkDebugLog.Checked;
         }
 
+        private async Task UpdatePackagesWimAsync()
+        {
+            string input;
+            using (var dialog = new OpenFileDialog
+            {
+                Title = "Select the existing packages.wim",
+                Filter = "Windows image (*.wim)|*.wim",
+                InitialDirectory = Environment.CurrentDirectory,
+                FileName = "packages.wim",
+                RestoreDirectory = true
+            })
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                input = dialog.FileName;
+            }
+
+            _tsBtnUpdateWim.Enabled = false;
+            try
+            {
+                _logger.Info("Updating packages WIM from " + input);
+                string ring = GetSelectedRing();
+                WimUpdatePlan plan = await Task.Run(() => AutomaticWimUpdate.Run(input, ring, _storeClient, _logger));
+                string message = plan.Add.Count == 0 && plan.Remove.Count == 0
+                    ? "No package changes were found."
+                    : string.Format("Updated {0} and generated MD5 and SHA-256 checksums.\nAdded {1} package(s), removed {2}.\nPrevious WIM: {3}",
+                        input, plan.Add.Count, plan.Remove.Count, plan.BackupPath);
+                if (plan.SkippedApps > 0)
+                    message += "\nKept " + plan.SkippedApps + " app variant(s) without a matching Store result.";
+                if (plan.PruningSkipped)
+                    message += "\nKept existing frameworks because some dependencies could not be fully inspected.";
+                _logger.Success(message);
+                MessageBox.Show(this, message, "Update Packages WIM", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error("WIM update failed", ex);
+                MessageBox.Show(this, ex.Message, "WIM update failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                _tsBtnUpdateWim.Enabled = true;
+            }
+        }
+
         private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
         {
+            if (!_tsBtnUpdateWim.Enabled)
+            {
+                e.Cancel = true;
+                MessageBox.Show(this, "Wait for the WIM update to finish before closing.",
+                    "WIM update in progress", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
             SaveAllCheckboxStates();
             if (_downloadManager != null && _downloadManager.ActiveDownloadCount > 0)
             {

@@ -97,6 +97,16 @@ namespace MSStoreDownloader
 
         public StoreQueryResult GetPackages(string productId, string ring, CancellationToken ct)
         {
+            return GetPackages(productId, "ProductId", ring, ct);
+        }
+
+        internal StoreQueryResult GetPackagesByFamily(string family, string ring, CancellationToken ct)
+        {
+            return GetPackages(family, "PackageFamilyName", ring, ct);
+        }
+
+        private StoreQueryResult GetPackages(string productId, string queryType, string ring, CancellationToken ct)
+        {
             StoreQueryResult result = new StoreQueryResult();
             result.ProductId = productId;
 
@@ -104,7 +114,7 @@ namespace MSStoreDownloader
             {
                 _logger.Info("Querying store.rg-adguard.net for product: " + productId);
 
-                string html = PostToRgAdguard(productId, ring, ct);
+                string html = PostToRgAdguard(productId, queryType, ring, ct);
 
                 if (ct.IsCancellationRequested)
                 {
@@ -241,10 +251,10 @@ namespace MSStoreDownloader
 
         // ── Private ────────────────────────────────────────────────────────────
 
-        private string PostToRgAdguard(string productId, string ring, CancellationToken ct)
+        private string PostToRgAdguard(string productId, string queryType, string ring, CancellationToken ct)
         {
             string postData =
-                "type=ProductId" +
+                "type=" + queryType +
                 "&url=" + Uri.EscapeDataString(productId) +
                 "&ring=" + Uri.EscapeDataString(ring ?? "RP") +
                 "&lang=en-US";

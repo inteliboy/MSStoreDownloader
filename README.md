@@ -113,11 +113,12 @@ Output: `bin\MSStoreDownloader.exe`
 
 ```bat
 csc /target:winexe /platform:anycpu /optimize+ /out:bin\MSStoreDownloader.exe ^
-    /r:System.dll /r:System.Core.dll /r:System.Drawing.dll ^
+    /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.IO.Compression.dll ^
     /r:System.Windows.Forms.dll /r:System.Net.dll ^
-    /r:System.Web.dll /r:System.Data.dll /r:Microsoft.CSharp.dll ^
+    /r:System.Web.dll /r:System.Web.Extensions.dll /r:System.Xml.Linq.dll /r:System.Data.dll /r:Microsoft.CSharp.dll ^
     src\Program.cs src\Logger.cs src\PackageInfo.cs src\PackageGridRow.cs ^
-    src\StoreClient.cs src\ManifestReader.cs src\DownloadManager.cs src\MainForm.cs
+    src\StoreClient.cs src\ManifestReader.cs src\DownloadManager.cs src\MainForm.cs ^
+    src\PackageWim.cs src\WimPackageManifest.cs src\AutomaticWimUpdate.cs src\StoreWimFeed.cs
 ```
 
 ### Option C — Visual Studio
@@ -125,12 +126,25 @@ csc /target:winexe /platform:anycpu /optimize+ /out:bin\MSStoreDownloader.exe ^
 1. Create a new **Windows Forms App (.NET Framework)** project targeting **.NET 4.8**
 2. Delete the auto-generated `Form1.cs`
 3. Add all `src\*.cs` files to the project
-4. Add a reference to **System.Web** *(Project → Add Reference → Assemblies)*
+4. Add references to **System.Web**, **System.Web.Extensions**, **System.IO.Compression**, and **System.Xml.Linq** *(Project → Add Reference → Assemblies)*
 5. Build with `Ctrl+Shift+B`
 
 ---
 
 ## Usage
+
+### Update a packages WIM
+
+1. Install 7-Zip with WIM update support in its standard Program Files location. The workflow was verified with 7-Zip 26.05.
+2. Select the release ring, click **Update Packages WIM**, and open the existing `packages.wim`.
+
+The source must be a standalone WIM with one image and Store packages at its root. The app identifies applications from their package manifests, looks up newer versions for the existing variants, and downloads the updates and their dependencies. It follows shared and transitive dependencies for the architectures represented in the image before removing superseded packages and unused frameworks.
+
+Apps without a matching Store result are kept. If a package cannot be inspected, existing frameworks are kept as a precaution. An unresolved required dependency stops the update.
+
+After 7-Zip verifies the new image, the app renames the previous image and any existing checksums to a timestamped `packages.backup-….wim` set in the same folder. The updated image takes the name `packages.wim` and gets fresh `packages.wim.md5` and `packages.wim.sha256` files. A run with no package changes leaves the active files in place.
+
+The updater uses Microsoft's catalog and delivery services. See the [Store delivery protocol reference](https://github.com/MECMwithShawn/Windows-Store-Offline-Environments#how-it-works).
 
 ### Basic workflow
 
